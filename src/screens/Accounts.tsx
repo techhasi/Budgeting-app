@@ -226,43 +226,59 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
   const [opening, setOpening] = useState(edit && edit.openingMinor ? (edit.openingMinor / 100).toFixed(2) : '')
   const [numberHint, setNumberHint] = useState(edit?.numberHint ?? '')
   const [creditLimit, setCreditLimit] = useState(edit?.creditLimitMinor ? (edit.creditLimitMinor / 100).toFixed(2) : '')
+  const [available, setAvailable] = useState('')
   const [actualBalance, setActualBalance] = useState('')
   const [error, setError] = useState('')
 
   async function save() {
     if (!name.trim()) return setError('Enter a name')
-    const openingMinor = opening.trim() ? parseAmount(opening, { allowZero: true, allowNegative: true }) : 0
-    if (openingMinor === null) return setError('Invalid opening balance')
     const hint = numberHint.replace(/\D/g, '').slice(-4)
     const fields: Partial<Account> = {
       name: name.trim(),
       type,
       color,
       currency: accCurrency,
-      openingMinor,
-      numberHint: hint || undefined
+      numberHint: hint || undefined,
+      statementMinor: undefined
     }
+
     if (type === 'credit') {
       const limitMinor = creditLimit.trim() ? parseAmount(creditLimit) : undefined
       if (creditLimit.trim() && !limitMinor) return setError('Invalid credit limit')
       fields.creditLimitMinor = limitMinor ?? undefined
-      // The due tracks the live outstanding balance; clear any old fixed statement
-      fields.statementMinor = undefined
-    } else {
-      fields.statementMinor = undefined
-      fields.creditLimitMinor = undefined
-    }
-    if (edit) {
-      await db.accounts.update(edit.id, fields)
-      // Reconcile to the real-world balance via an adjustment transaction
-      if (actualBalance.trim()) {
-        const target = parseAmount(actualBalance, { allowZero: true, allowNegative: true })
-        if (target === null) return setError('Invalid actual balance')
-        const diff = target - (balanceMinor ?? 0)
-        if (diff !== 0) await addAdjustment(edit.id, diff, 'Manual balance adjustment', undefined, accCurrency)
+
+      // User enters what's AVAILABLE to spend; owed balance = available − limit
+      let targetBalance: number | null = null
+      if (available.trim()) {
+        if (!limitMinor) return setError('Enter the credit limit first')
+        const avail = parseAmount(available, { allowZero: true })
+        if (avail === null) return setError('Invalid available amount')
+        targetBalance = avail - limitMinor
+      }
+      if (edit) {
+        await db.accounts.update(edit.id, fields)
+        if (targetBalance !== null) {
+          const diff = targetBalance - (balanceMinor ?? 0)
+          if (diff !== 0) await addAdjustment(edit.id, diff, 'Balance set from available credit', undefined, accCurrency)
+        }
+      } else {
+        await db.accounts.add({ id: uid(), openingMinor: targetBalance ?? 0, ...fields } as Account)
       }
     } else {
-      await db.accounts.add({ id: uid(), openingMinor: 0, ...fields } as Account)
+      fields.creditLimitMinor = undefined
+      const openingMinor = opening.trim() ? parseAmount(opening, { allowZero: true, allowNegative: true }) : 0
+      if (openingMinor === null) return setError('Invalid opening balance')
+      if (edit) {
+        await db.accounts.update(edit.id, { ...fields, openingMinor })
+        if (actualBalance.trim()) {
+          const target = parseAmount(actualBalance, { allowZero: true, allowNegative: true })
+          if (target === null) return setError('Invalid actual balance')
+          const diff = target - (balanceMinor ?? 0)
+          if (diff !== 0) await addAdjustment(edit.id, diff, 'Manual balance adjustment', undefined, accCurrency)
+        }
+      } else {
+        await db.accounts.add({ id: uid(), ...fields, openingMinor } as Account)
+      }
     }
     onClose()
   }
@@ -320,17 +336,15 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
           ⚠️ Changing currency reinterprets this account's opening balance in {accCurrency} — check the balance after saving.
         </p>
       )}
-      <input
-        placeholder={
-          type === 'credit'
-            ? 'Opening balance (use -amount for existing debt)'
-            : `Opening balance (${CURRENCY_SYMBOL[accCurrency]}, optional)`
-        }
-        inputMode="text"
-        value={opening}
-        onChange={e => setOpening(e.target.value)}
-        className="mb-3 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
-      />
+      {type !== 'credit' && (
+        <input
+          placeholder={`Opening balance (${CURRENCY_SYMBOL[accCurrency]}, optional)`}
+          inputMode="text"
+          value={opening}
+          onChange={e => setOpening(e.target.value)}
+          className="mb-3 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
+        />
+      )}
       <input
         placeholder="Card/account last 4 digits (for SMS matching)"
         inputMode="numeric"
@@ -344,18 +358,30 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
       {type === 'credit' && (
         <>
           <input
-            placeholder="Credit limit (Rs, optional)"
+            placeholder="Credit limit (Rs)"
             inputMode="decimal"
             value={creditLimit}
             onChange={e => setCreditLimit(e.target.value)}
             className="mb-1 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
+          <p className="mb-3 text-xs text-slate-400">Your total credit limit.</p>
+          <input
+            placeholder={
+              edit
+                ? `Available to spend now (app shows ${fmt(Math.max(0, (edit.creditLimitMinor ?? 0) + (balanceMinor ?? 0)), accCurrency, { compactCents: true })})`
+                : 'Available to spend now (Rs)'
+            }
+            inputMode="decimal"
+            value={available}
+            onChange={e => setAvailable(e.target.value)}
+            className="mb-1 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
+          />
           <p className="mb-4 text-xs text-slate-400">
-            Shows remaining available credit. The amount due tracks your outstanding balance live and is due by month-end.
+            💡 Enter what you can still spend — HasiKasi works out what you owe (limit − available) automatically.
           </p>
         </>
       )}
-      {edit && (
+      {edit && type !== 'credit' && (
         <>
           <input
             placeholder={`Actual balance now (app shows ${fmt(balanceMinor ?? 0, accCurrency, { compactCents: true })})`}
