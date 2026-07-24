@@ -44,7 +44,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     body: [
       'Add rent, subscriptions, and loan installments in Accounts → Recurring & loans. They appear on Home from 5 days before they\'re due — Log ✓ records the expense, Skip moves to next cycle. Loans show payoff progress.',
       'Paying early? Tap the item in Accounts → Recurring & loans: "Log now" records an installment any time, and loans have a "Pay off remaining" button for full early settlement.',
-      'Credit cards: the amount due tracks your outstanding balance live (it updates as you spend or pay) and is due by month-end — Home shows a countdown. Pay ✓ records a transfer from your bank to the card; Dismiss marks it paid without logging.'
+      'Credit cards: the amount due is your monthly statement — revolving balance plus one installment for any loans on the card — due by month-end. Pay ✓ records one bank→card transfer and advances those loans automatically; Dismiss marks it paid without logging. Set up an installment plan as a Loan (Accounts → Recurring & loans) with its account set to the card.'
     ]
   },
   {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, DEFAULT_SETTINGS, type Txn } from '../db/db'
 import { computeTotals, txnsInPeriod } from '../lib/periods'
-import { logRecurring, skipRecurring, loanRemainingByAccount } from '../lib/recurring'
+import { logRecurring, skipRecurring, loanRemainingByAccount, loanInstallmentByAccount, payCardAdvanceLoans } from '../lib/recurring'
 import { computeBalances } from '../lib/balances'
 import { fmt, toLKR } from '../lib/money'
 import { friendlyDate, periodLabel, todayISO, addDaysISO, currentMonth, endOfMonthISO, daysUntil, shortDate } from '../lib/dates'
@@ -58,21 +58,32 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
       .sort((a, b) => b.spent / b.budget - a.spent / a.budget)
   }, [txns, period, categories, settings?.usdRate])
 
-  // Credit card dues: outstanding balance minus any installment-loan balances
-  // on the card (those are paid monthly, not all due this month)
+  // Credit card statement = revolving balance (owed minus loan balances that
+  // are paid over time) + this month's installment. One payment, loan folded in.
   const cardsDue = useMemo(() => {
     const month = currentMonth()
     const balances = computeBalances(accounts, txns, settings?.usdRate ?? 300)
     const loanRem = loanRemainingByAccount(recurring)
+    const loanInst = loanInstallmentByAccount(recurring)
     return accounts
       .filter(a => a.type === 'credit' && a.lastPaidMonth !== month)
-      .map(a => ({
-        account: a,
-        currency: a.currency ?? ('LKR' as const),
-        dueMinor: Math.max(0, -(balances.get(a.id) ?? 0) - (loanRem.get(a.id) ?? 0))
-      }))
+      .map(a => {
+        const revolving = Math.max(0, -(balances.get(a.id) ?? 0) - (loanRem.get(a.id) ?? 0))
+        const installmentMinor = loanInst.get(a.id) ?? 0
+        return {
+          account: a,
+          currency: a.currency ?? ('LKR' as const),
+          installmentMinor,
+          dueMinor: revolving + installmentMinor
+        }
+      })
       .filter(c => c.dueMinor > 0)
   }, [accounts, txns, recurring, settings?.usdRate])
+
+  // Standalone recurring due list excludes loans on credit cards — those are
+  // paid together with the card statement above.
+  const creditIds = useMemo(() => new Set(accounts.filter(a => a.type === 'credit').map(a => a.id)), [accounts])
+  const dueVisible = useMemo(() => due.filter(r => !(r.kind === 'loan' && creditIds.has(r.accountId))), [due, creditIds])
 
   const grouped = useMemo(() => {
     if (!period) return []
@@ -182,13 +193,13 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
       </section>
 
       {/* Due recurring payments */}
-      {due.length > 0 && (
+      {dueVisible.length > 0 && (
         <section className="mt-6">
           <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             Due payments
           </h2>
           <div className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10">
-            {due.map(r => {
+            {dueVisible.map(r => {
               const days = daysUntil(r.nextDue)
               const dueLabel =
                 days < 0 ? `overdue (${friendlyDate(r.nextDue).toLowerCase()})`
@@ -245,6 +256,9 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
                     {fmt(c.dueMinor, c.currency, { compactCents: true })} ·{' '}
                     {daysUntil(endOfMonthISO()) === 0 ? 'due today!' : `${daysUntil(endOfMonthISO())} days left`}
                   </p>
+                  {c.installmentMinor > 0 && (
+                    <p className="text-[11px] text-slate-400">incl. {fmt(c.installmentMinor, c.currency, { compactCents: true })} installment</p>
+                  )}
                 </div>
                 <button
                   onClick={() => db.accounts.update(c.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })}
@@ -378,9 +392,11 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
             toAccountId: payCard.account.id,
             note: `${payCard.account.name} bill`
           }}
-          onSaved={() =>
-            db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
-          }
+          onSaved={async () => {
+            await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
+            // Paying the statement covers this month's installment(s) too
+            await payCardAdvanceLoans(payCard.account.id)
+          }}
           onClose={() => setPayCard(null)}
         />
       )}

@@ -62,6 +62,34 @@ export function loanRemainingByAccount(recs: Recurring[]): Map<string, number> {
   return map
 }
 
+/** This month's installment total per account, capped at each loan's remaining. */
+export function loanInstallmentByAccount(recs: Recurring[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const r of recs) {
+    if (r.kind !== 'loan') continue
+    const inst = Math.min(r.amountMinor, loanRemaining(r))
+    if (inst > 0) map.set(r.accountId, (map.get(r.accountId) ?? 0) + inst)
+  }
+  return map
+}
+
+/**
+ * When a credit card bill is paid, advance every installment loan on that card:
+ * one installment is now paid, so its remaining drops and its schedule rolls on.
+ */
+export async function payCardAdvanceLoans(accountId: string): Promise<void> {
+  const loans = (await db.recurring.toArray()).filter(
+    r => r.kind === 'loan' && r.accountId === accountId && loanRemaining(r) > 0
+  )
+  for (const r of loans) {
+    const inst = Math.min(r.amountMinor, loanRemaining(r))
+    await db.recurring.update(r.id, {
+      paidMinor: (r.paidMinor ?? 0) + inst,
+      nextDue: advanceDue(r.nextDue, r.dayOfMonth, r.intervalMonths)
+    })
+  }
+}
+
 /** Settle a loan's full remaining amount early as a single expense. */
 export async function payOffLoan(r: Recurring): Promise<void> {
   const remaining = loanRemaining(r)
