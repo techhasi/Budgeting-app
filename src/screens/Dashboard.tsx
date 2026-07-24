@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, DEFAULT_SETTINGS, type Txn } from '../db/db'
 import { computeTotals, txnsInPeriod } from '../lib/periods'
-import { logRecurring, skipRecurring } from '../lib/recurring'
+import { logRecurring, skipRecurring, loanRemainingByAccount } from '../lib/recurring'
 import { computeBalances } from '../lib/balances'
 import { fmt, toLKR } from '../lib/money'
 import { friendlyDate, periodLabel, todayISO, addDaysISO, currentMonth, endOfMonthISO, daysUntil, shortDate } from '../lib/dates'
@@ -20,6 +20,7 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
   const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const pendingCount = useLiveQuery(() => db.pending.count(), [], 0)
   // Due now plus a 5-day advance warning; fully-paid loans no longer nag
+  const recurring = useLiveQuery(() => db.recurring.toArray(), [], [])
   const due = useLiveQuery(
     async () =>
       (await db.recurring.where('nextDue').belowOrEqual(addDaysISO(todayISO(), 5)).sortBy('nextDue')).filter(
@@ -57,19 +58,21 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
       .sort((a, b) => b.spent / b.budget - a.spent / a.budget)
   }, [txns, period, categories, settings?.usdRate])
 
-  // Credit card dues: live outstanding balance, due end of month
+  // Credit card dues: outstanding balance minus any installment-loan balances
+  // on the card (those are paid monthly, not all due this month)
   const cardsDue = useMemo(() => {
     const month = currentMonth()
     const balances = computeBalances(accounts, txns, settings?.usdRate ?? 300)
+    const loanRem = loanRemainingByAccount(recurring)
     return accounts
       .filter(a => a.type === 'credit' && a.lastPaidMonth !== month)
       .map(a => ({
         account: a,
         currency: a.currency ?? ('LKR' as const),
-        dueMinor: Math.max(0, -(balances.get(a.id) ?? 0))
+        dueMinor: Math.max(0, -(balances.get(a.id) ?? 0) - (loanRem.get(a.id) ?? 0))
       }))
       .filter(c => c.dueMinor > 0)
-  }, [accounts, txns, settings?.usdRate])
+  }, [accounts, txns, recurring, settings?.usdRate])
 
   const grouped = useMemo(() => {
     if (!period) return []

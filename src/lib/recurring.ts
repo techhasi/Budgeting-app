@@ -52,6 +52,16 @@ export function loanRemaining(r: Recurring): number {
   return Math.max(0, (r.principalMinor ?? 0) - (r.paidMinor ?? 0))
 }
 
+/** Sum of outstanding loan balances per account (e.g. installment plans on a card). */
+export function loanRemainingByAccount(recs: Recurring[]): Map<string, number> {
+  const map = new Map<string, number>()
+  for (const r of recs) {
+    if (r.kind !== 'loan') continue
+    map.set(r.accountId, (map.get(r.accountId) ?? 0) + loanRemaining(r))
+  }
+  return map
+}
+
 /** Settle a loan's full remaining amount early as a single expense. */
 export async function payOffLoan(r: Recurring): Promise<void> {
   const remaining = loanRemaining(r)

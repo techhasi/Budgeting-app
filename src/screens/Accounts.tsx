@@ -4,6 +4,7 @@ import { db, uid, DEFAULT_SETTINGS, type Account, type Currency, type Investment
 import { fmt, toLKR, parseAmount, CURRENCY_SYMBOL } from '../lib/money'
 import { shortDate, currentMonth, endOfMonthISO } from '../lib/dates'
 import { computeBalances, addAdjustment } from '../lib/balances'
+import { loanRemainingByAccount } from '../lib/recurring'
 import Sheet from '../components/Sheet'
 import RecurringSheet from '../components/RecurringSheet'
 import InvestmentSheet, { INVESTMENT_TYPES } from '../components/InvestmentSheet'
@@ -31,6 +32,7 @@ export default function Accounts() {
   const usdRate = settings?.usdRate ?? 300
 
   const balances = useMemo(() => computeBalances(accounts, txns, usdRate), [accounts, txns, usdRate])
+  const loanRem = useMemo(() => loanRemainingByAccount(recurring), [recurring])
 
   const accountsTotal = accounts.reduce(
     (s, a) => s + toLKR(balances.get(a.id) ?? 0, a.currency ?? 'LKR', usdRate),
@@ -79,9 +81,9 @@ export default function Accounts() {
                   {accCur !== 'LKR' && ` · ${accCur}`}
                   {a.numberHint && ` · •••${a.numberHint}`}
                 </p>
-                {a.type === 'credit' && a.lastPaidMonth !== currentMonth() && -bal > 0 && (
+                {a.type === 'credit' && a.lastPaidMonth !== currentMonth() && -bal - (loanRem.get(a.id) ?? 0) > 0 && (
                   <p className="text-xs font-semibold text-amber-600 dark:text-amber-400">
-                    {fmt(-bal, accCur, { compactCents: true })} due by {shortDate(endOfMonthISO())}
+                    {fmt(-bal - (loanRem.get(a.id) ?? 0), accCur, { compactCents: true })} due by {shortDate(endOfMonthISO())}
                   </p>
                 )}
               </div>
