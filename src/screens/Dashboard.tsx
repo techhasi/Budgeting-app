@@ -4,7 +4,7 @@ import { db, DEFAULT_SETTINGS, type Txn } from '../db/db'
 import { computeTotals, txnsInPeriod } from '../lib/periods'
 import { logRecurring, skipRecurring, loanRemainingByAccount, loanInstallmentByAccount, payCardAdvanceLoans } from '../lib/recurring'
 import { computeBalances } from '../lib/balances'
-import { fmt, toLKR } from '../lib/money'
+import { fmt, toLKR, convertMinor } from '../lib/money'
 import { friendlyDate, periodLabel, todayISO, addDaysISO, currentMonth, endOfMonthISO, daysUntil, shortDate } from '../lib/dates'
 import TxnDetail from '../components/TxnDetail'
 import SmsImport from '../components/SmsImport'
@@ -82,6 +82,23 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
 
   // Standalone recurring due list excludes loans on credit cards — those are
   // paid together with the card statement above.
+  // How much has been charged to each credit card this budget period
+  const cardSpend = useMemo(() => {
+    if (!period) return []
+    const rate = settings?.usdRate ?? 300
+    const inPeriod = txnsInPeriod(txns, period)
+    return accounts
+      .filter(a => a.type === 'credit')
+      .map(a => {
+        const cur = a.currency ?? ('LKR' as const)
+        const spent = inPeriod
+          .filter(t => t.accountId === a.id && t.type === 'expense' && !t.adjustment)
+          .reduce((s, t) => s + convertMinor(t.amountMinor, t.currency, cur, rate), 0)
+        return { account: a, currency: cur, spent }
+      })
+      .filter(c => c.spent > 0)
+  }, [accounts, txns, period, settings?.usdRate])
+
   const creditIds = useMemo(() => new Set(accounts.filter(a => a.type === 'credit').map(a => a.id)), [accounts])
   const dueVisible = useMemo(() => due.filter(r => !(r.kind === 'loan' && creditIds.has(r.accountId))), [due, creditIds])
 
@@ -272,6 +289,32 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
                 >
                   Pay ✓
                 </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Credit card spending this period */}
+      {cardSpend.length > 0 && (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+            Card spending · this period
+          </h2>
+          <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-slate-800/60">
+            {cardSpend.map(c => (
+              <div key={c.account.id} className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0 dark:border-slate-700/50">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-500/10 text-base">💳</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {c.account.name}
+                    {c.account.numberHint && <span className="text-slate-400"> · •••{c.account.numberHint}</span>}
+                  </p>
+                  <p className="text-xs text-slate-400">spent this period</p>
+                </div>
+                <p className="text-sm font-semibold tabular-nums text-rose-500">
+                  {fmt(c.spent, c.currency, { compactCents: true })}
+                </p>
               </div>
             ))}
           </div>
