@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, DEFAULT_SETTINGS, type Settings } from '../db/db'
 import { exportBackup, importBackup } from '../lib/backup'
@@ -89,15 +89,7 @@ export default function SettingsScreen() {
           />
         </Row>
         <Row label="USD rate" hint="LKR per 1 USD, used for totals">
-          <input
-            inputMode="decimal"
-            defaultValue={settings.usdRate}
-            onBlur={e => {
-              const n = parseFloat(e.target.value)
-              if (Number.isFinite(n) && n > 0) update({ usdRate: n })
-            }}
-            className="w-20 rounded-xl border border-slate-200 bg-slate-50 p-2 text-right text-sm tabular-nums dark:border-slate-700 dark:bg-slate-800"
-          />
+          <UsdRateInput value={settings.usdRate} onSave={n => update({ usdRate: n })} />
         </Row>
       </Section>
 
@@ -157,10 +149,10 @@ export default function SettingsScreen() {
             Overlay your Google Calendar events on the Tasks → Calendar view. Read-only, and the browser sign-in lasts
             about an hour, so you tap Connect once per session.
           </p>
-          <input
+          <SyncedInput
             placeholder="Google OAuth client id"
-            defaultValue={settings.gcalClientId ?? ''}
-            onBlur={e => update({ gcalClientId: e.target.value.trim() || undefined })}
+            value={settings.gcalClientId ?? ''}
+            onCommit={v => update({ gcalClientId: v.trim() || undefined })}
             className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
           <details>
@@ -192,17 +184,17 @@ export default function SettingsScreen() {
             Backs up to a <b>private</b> GitHub repo you own: one daily backup kept up to date, plus a snapshot each
             budget cycle. Runs automatically when you open the app.
           </p>
-          <input
+          <SyncedInput
             placeholder="Repo (e.g. techhasi/hasikasi-backups)"
-            defaultValue={settings.backupRepo ?? ''}
-            onBlur={e => update({ backupRepo: normalizeRepo(e.target.value) || undefined })}
+            value={settings.backupRepo ?? ''}
+            onCommit={v => update({ backupRepo: normalizeRepo(v) || undefined })}
             className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
-          <input
+          <SyncedInput
             type="password"
             placeholder="Fine-grained token (Contents: read/write)"
-            defaultValue={settings.backupToken ?? ''}
-            onBlur={e => update({ backupToken: e.target.value.trim() || undefined })}
+            value={settings.backupToken ?? ''}
+            onCommit={v => update({ backupToken: v.trim() || undefined })}
             className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
           <div className="flex items-center justify-between gap-3">
@@ -334,5 +326,57 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${checked ? 'left-[22px]' : 'left-0.5'}`}
       />
     </button>
+  )
+}
+
+/** Controlled text input that stays in sync with async-loaded settings and saves live. */
+function SyncedInput({
+  value,
+  onCommit,
+  ...rest
+}: { value: string; onCommit: (v: string) => void } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const [text, setText] = useState(value)
+  const focused = useRef(false)
+  // Adopt the loaded value only while the field isn't being edited
+  useEffect(() => {
+    if (!focused.current) setText(value)
+  }, [value])
+  return (
+    <input
+      {...rest}
+      value={text}
+      onFocus={() => (focused.current = true)}
+      onChange={e => {
+        setText(e.target.value)
+        onCommit(e.target.value)
+      }}
+      onBlur={() => (focused.current = false)}
+    />
+  )
+}
+
+function UsdRateInput({ value, onSave }: { value: number; onSave: (n: number) => void }) {
+  const [text, setText] = useState(String(value))
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focused.current) setText(String(value))
+  }, [value])
+  return (
+    <input
+      inputMode="decimal"
+      value={text}
+      onFocus={() => (focused.current = true)}
+      onChange={e => {
+        setText(e.target.value)
+        const n = parseFloat(e.target.value)
+        if (Number.isFinite(n) && n > 0) onSave(n)
+      }}
+      onBlur={() => {
+        focused.current = false
+        const n = parseFloat(text)
+        if (!Number.isFinite(n) || n <= 0) setText(String(value))
+      }}
+      className="w-20 rounded-xl border border-slate-200 bg-slate-50 p-2 text-right text-sm tabular-nums dark:border-slate-700 dark:bg-slate-800"
+    />
   )
 }
