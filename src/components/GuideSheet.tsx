@@ -12,6 +12,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     title: '➕ Adding transactions',
     body: [
       'Tap the big + button. Pick Expense, Income, or Transfer (moving money between accounts — doesn\'t count as spending).',
+      'Paying a credit card bill is a Transfer (bank → card), not an expense — it just settles debt you already recorded when you spent on the card. Logging it as an expense would double-count. For different-currency accounts, a transfer also asks for the amount received.',
       'Expenses can have a receipt photo attached. Create your own categories with the ＋ New button in the category grid.',
       'If a similar transaction (same amount, ±2 days) exists, you\'ll get a duplicate warning — tap "Add anyway" if it\'s genuinely new.',
       'Tap any transaction in the list to view, edit, or delete it.'
