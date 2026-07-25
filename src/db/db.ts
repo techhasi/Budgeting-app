@@ -30,6 +30,8 @@ export interface Account {
   openingMinor: number
   /** last 3-4 digits of the card/account, used to auto-match SMS imports */
   numberHint?: string
+  /** bank accounts: flag as a savings account (shown distinctly) */
+  isSavings?: boolean
   /** credit cards: this month's statement amount due (LKR minor); unset = use outstanding balance */
   statementMinor?: number
   /** credit cards: "YYYY-MM" when the bill was last marked paid, hides the due reminder */

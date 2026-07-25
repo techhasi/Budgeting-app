@@ -73,12 +73,12 @@ export default function Accounts() {
             >
             <div className="flex w-full items-center gap-3">
               <span className="flex h-11 w-11 items-center justify-center rounded-2xl text-xl" style={{ backgroundColor: `${a.color}22` }}>
-                {t?.emoji}
+                {a.isSavings ? '🐷' : t?.emoji}
               </span>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{a.name}</p>
                 <p className="text-xs text-slate-400">
-                  {t?.label ?? a.type}
+                  {a.isSavings ? 'Savings' : (t?.label ?? a.type)}
                   {accCur !== 'LKR' && ` · ${accCur}`}
                   {a.numberHint && ` · •••${a.numberHint}`}
                 </p>
@@ -230,6 +230,7 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
   const [color, setColor] = useState(edit?.color ?? ACCOUNT_COLORS[1])
   const [opening, setOpening] = useState(edit && edit.openingMinor ? (edit.openingMinor / 100).toFixed(2) : '')
   const [numberHint, setNumberHint] = useState(edit?.numberHint ?? '')
+  const [isSavings, setIsSavings] = useState(edit?.isSavings ?? false)
   const [creditLimit, setCreditLimit] = useState(edit?.creditLimitMinor ? (edit.creditLimitMinor / 100).toFixed(2) : '')
   const [available, setAvailable] = useState('')
   const [actualBalance, setActualBalance] = useState('')
@@ -242,6 +243,7 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
       name: name.trim(),
       type,
       color,
+      isSavings: type === 'bank' ? isSavings || undefined : undefined,
       currency: accCurrency,
       numberHint: hint || undefined,
       statementMinor: undefined
@@ -310,6 +312,17 @@ function AccountSheet({ edit, balanceMinor, onClose }: { edit?: Account; balance
           </button>
         ))}
       </div>
+      {type === 'bank' && (
+        <label className="mb-3 flex items-center justify-between rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/60">
+          <span className="text-sm font-medium">🐷 Savings account</span>
+          <input
+            type="checkbox"
+            checked={isSavings}
+            onChange={e => setIsSavings(e.target.checked)}
+            className="h-5 w-5 accent-indigo-500"
+          />
+        </label>
+      )}
       <div className="mb-3 flex flex-wrap gap-2">
         {ACCOUNT_COLORS.map(c => (
           <button
