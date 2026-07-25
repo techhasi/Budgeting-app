@@ -70,6 +70,7 @@ export default function AddSheet({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [duplicate, setDuplicate] = useState<Txn | null>(null)
+  const [received, setReceived] = useState(edit?.toAmountMinor ? (edit.toAmountMinor / 100).toFixed(2) : '')
 
   // New-category mini form
   const [newCatOpen, setNewCatOpen] = useState(false)
@@ -79,11 +80,15 @@ export default function AddSheet({
 
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const activeCurrency = currency ?? settings?.currency ?? 'LKR'
   const cats = useMemo(() => categories.filter(c => c.kind === type), [categories, type])
   const selectedCat = cats.find(c => c.id === categoryId)
   const effectiveAccountId = accountId ?? accounts[0]?.id ?? null
   const effectiveToAccountId = toAccountId ?? accounts.find(a => a.id !== effectiveAccountId)?.id ?? null
+  const fromCur = accounts.find(a => a.id === effectiveAccountId)?.currency ?? 'LKR'
+  const toCur = accounts.find(a => a.id === effectiveToAccountId)?.currency ?? 'LKR'
+  const crossCurrency = type === 'transfer' && fromCur !== toCur
+  // Transfers are denominated in the source account's currency
+  const activeCurrency = type === 'transfer' ? fromCur : (currency ?? settings?.currency ?? 'LKR')
   // Only offer "start new period" for freshly added salary income
   const isSalary = !edit && type === 'income' && selectedCat?.name === 'Salary'
 
@@ -101,9 +106,16 @@ export default function AddSheet({
     const amountMinor = parseAmount(amount)
     if (!amountMinor) return setError('Enter a valid amount')
     if (!effectiveAccountId) return setError('Pick an account')
+    let toAmountMinor: number | undefined
     if (type === 'transfer') {
       if (accounts.length < 2) return setError('Add a second account first (Accounts tab)')
       if (!effectiveToAccountId || effectiveToAccountId === effectiveAccountId) return setError('Pick two different accounts')
+      if (crossCurrency) {
+        toAmountMinor = parseAmount(received) ?? undefined
+        if (!toAmountMinor) return setError(`Enter the amount received in ${toCur}`)
+      } else {
+        toAmountMinor = amountMinor
+      }
     } else if (!categoryId || !cats.some(c => c.id === categoryId)) {
       return setError('Pick a category')
     }
@@ -131,6 +143,7 @@ export default function AddSheet({
         categoryId: type === 'transfer' ? '' : categoryId!,
         accountId: effectiveAccountId,
         toAccountId: type === 'transfer' ? effectiveToAccountId! : undefined,
+        toAmountMinor: type === 'transfer' ? toAmountMinor : undefined,
         date,
         note: note.trim()
       }
@@ -181,13 +194,20 @@ export default function AddSheet({
       )}
 
       {/* Amount */}
+      {type === 'transfer' && <p className="mb-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">Amount sent</p>}
       <div className="mb-5 flex items-end justify-center gap-2">
-        <button
-          onClick={() => setCurrency(activeCurrency === 'LKR' ? 'USD' : 'LKR')}
-          className="mb-2 rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
-        >
-          {CURRENCY_SYMBOL[activeCurrency]} {activeCurrency}
-        </button>
+        {type === 'transfer' ? (
+          <span className="mb-2 rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+            {CURRENCY_SYMBOL[fromCur]} {fromCur}
+          </span>
+        ) : (
+          <button
+            onClick={() => setCurrency(activeCurrency === 'LKR' ? 'USD' : 'LKR')}
+            className="mb-2 rounded-lg bg-slate-100 px-2.5 py-1 text-sm font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+          >
+            {CURRENCY_SYMBOL[activeCurrency]} {activeCurrency}
+          </button>
+        )}
         <input
           autoFocus={!edit}
           inputMode="decimal"
@@ -197,6 +217,25 @@ export default function AddSheet({
           className="w-44 bg-transparent text-center text-5xl font-bold tabular-nums tracking-tight outline-none placeholder:text-slate-300 dark:placeholder:text-slate-700"
         />
       </div>
+
+      {crossCurrency && (
+        <div className="mb-4 rounded-2xl bg-amber-50 p-3 dark:bg-amber-500/10">
+          <Label>Amount received ({toCur})</Label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-500">{CURRENCY_SYMBOL[toCur]}</span>
+            <input
+              inputMode="decimal"
+              placeholder="0.00"
+              value={received}
+              onChange={e => setReceived(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm tabular-nums dark:border-slate-700 dark:bg-slate-900"
+            />
+          </div>
+          <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">
+            Different currencies — enter exactly what landed in the destination account so both balances stay right.
+          </p>
+        </div>
+      )}
 
       {type === 'transfer' ? (
         /* From / To accounts */

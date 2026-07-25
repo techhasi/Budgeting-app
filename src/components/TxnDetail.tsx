@@ -62,6 +62,9 @@ export default function TxnDetail({ txn, onClose }: { txn: Txn; onClose: () => v
           <>
             <Row label="From" value={account?.name ?? '—'} />
             <Row label="To" value={toAccount?.name ?? '—'} />
+            {txn.toAmountMinor != null && toAccount && (toAccount.currency ?? 'LKR') !== txn.currency && (
+              <Row label="Received" value={fmt(txn.toAmountMinor, toAccount.currency ?? 'LKR', { compactCents: true })} />
+            )}
           </>
         ) : (
           <Row label="Account" value={account?.name ?? '—'} />

@@ -36,8 +36,13 @@ export function computeBalances(accounts: Account[], txns: Txn[], usdRate: numbe
     convertMinor(t.amountMinor, t.currency, accCurrency.get(accountId) ?? 'LKR', usdRate)
   for (const t of txns) {
     if (t.type === 'transfer') {
+      // Amount leaving the source (in its currency) and arriving at the destination
+      // (its own currency): use the explicit received amount when present, else convert.
       map.set(t.accountId, (map.get(t.accountId) ?? 0) - inAccount(t, t.accountId))
-      if (t.toAccountId) map.set(t.toAccountId, (map.get(t.toAccountId) ?? 0) + inAccount(t, t.toAccountId))
+      if (t.toAccountId) {
+        const arrived = t.toAmountMinor ?? inAccount(t, t.toAccountId)
+        map.set(t.toAccountId, (map.get(t.toAccountId) ?? 0) + arrived)
+      }
     } else {
       map.set(t.accountId, (map.get(t.accountId) ?? 0) + (t.type === 'expense' ? -1 : 1) * inAccount(t, t.accountId))
     }

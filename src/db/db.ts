@@ -50,6 +50,9 @@ export interface Txn {
   accountId: string
   /** transfers only: destination account */
   toAccountId?: string
+  /** transfers only: amount arriving in the destination account's currency
+   *  (differs from amountMinor for cross-currency transfers) */
+  toAmountMinor?: number
   /** ISO date YYYY-MM-DD */
   date: string
   note: string
