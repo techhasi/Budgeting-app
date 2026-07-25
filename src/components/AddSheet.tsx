@@ -82,7 +82,10 @@ export default function AddSheet({
 
   const cats = useMemo(() => categories.filter(c => c.kind === type), [categories, type])
   const selectedCat = cats.find(c => c.id === categoryId)
-  const effectiveAccountId = accountId ?? accounts[0]?.id ?? null
+  // Fall back to the configured primary account for the current type
+  const preferredDefault = type === 'income' ? settings?.defaultIncomeAccountId : settings?.defaultExpenseAccountId
+  const validPreferred = preferredDefault && accounts.some(a => a.id === preferredDefault) ? preferredDefault : undefined
+  const effectiveAccountId = accountId ?? validPreferred ?? accounts[0]?.id ?? null
   const effectiveToAccountId = toAccountId ?? accounts.find(a => a.id !== effectiveAccountId)?.id ?? null
   const fromCur = accounts.find(a => a.id === effectiveAccountId)?.currency ?? 'LKR'
   const toCur = accounts.find(a => a.id === effectiveToAccountId)?.currency ?? 'LKR'

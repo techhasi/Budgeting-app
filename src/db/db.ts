@@ -97,6 +97,9 @@ export interface Settings {
   lockCredentialId?: string
   /** Google Calendar OAuth client id (public), for the tasks calendar overlay */
   gcalClientId?: string
+  /** account auto-selected when adding an expense / income */
+  defaultExpenseAccountId?: string
+  defaultIncomeAccountId?: string
 }
 
 export type Priority = 'none' | 'low' | 'medium' | 'high'

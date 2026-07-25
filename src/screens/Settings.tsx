@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, DEFAULT_SETTINGS, type Settings } from '../db/db'
+import { db, DEFAULT_SETTINGS, type Account, type Settings } from '../db/db'
 import { exportBackup, importBackup } from '../lib/backup'
 import { autoBackup, normalizeRepo } from '../lib/cloudBackup'
 import { lockSupported, enrollLock, verifyLock } from '../lib/appLock'
@@ -9,6 +9,7 @@ import CloudRestoreSheet from '../components/CloudRestoreSheet'
 
 export default function SettingsScreen() {
   const settings = useLiveQuery(() => db.settings.get('app'), [], DEFAULT_SETTINGS)
+  const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const importRef = useRef<HTMLInputElement>(null)
   const [message, setMessage] = useState('')
   const [guideOpen, setGuideOpen] = useState(false)
@@ -54,6 +55,20 @@ export default function SettingsScreen() {
             value={settings.theme}
             options={['system', 'light', 'dark']}
             onChange={v => update({ theme: v as Settings['theme'] })}
+          />
+        </Row>
+        <Row label="Primary card" hint="Auto-selected when adding an expense">
+          <AccountSelect
+            value={settings.defaultExpenseAccountId}
+            accounts={accounts}
+            onChange={id => update({ defaultExpenseAccountId: id })}
+          />
+        </Row>
+        <Row label="Primary account" hint="Auto-selected when adding income">
+          <AccountSelect
+            value={settings.defaultIncomeAccountId}
+            accounts={accounts}
+            onChange={id => update({ defaultIncomeAccountId: id })}
           />
         </Row>
         <Row label="Carry over balance" hint="Roll leftover money into the next budget month">
@@ -352,6 +367,21 @@ function SyncedInput({
       }}
       onBlur={() => (focused.current = false)}
     />
+  )
+}
+
+function AccountSelect({ value, accounts, onChange }: { value?: string; accounts: Account[]; onChange: (id: string | undefined) => void }) {
+  return (
+    <select
+      value={value && accounts.some(a => a.id === value) ? value : ''}
+      onChange={e => onChange(e.target.value || undefined)}
+      className="max-w-[9.5rem] truncate rounded-xl border border-slate-200 bg-slate-50 p-2 text-sm dark:border-slate-700 dark:bg-slate-800"
+    >
+      <option value="">First account</option>
+      {accounts.map(a => (
+        <option key={a.id} value={a.id}>{a.name}</option>
+      ))}
+    </select>
   )
 }
 
