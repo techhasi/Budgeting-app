@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uid, DEFAULT_SETTINGS, type Account, type Currency, type Investment, type Recurring } from '../db/db'
+import { db, uid, DEFAULT_SETTINGS, MARKET_TYPES, type Account, type Currency, type Investment, type Recurring } from '../db/db'
 import { fmt, toLKR, parseAmount, CURRENCY_SYMBOL } from '../lib/money'
 import { shortDate, currentMonth, endOfMonthISO } from '../lib/dates'
 import { computeBalances, addAdjustment } from '../lib/balances'
 import { loanRemainingByAccount, loanInstallmentByAccount } from '../lib/recurring'
+import { currentValueMinor, profitMinor, fdMaturityMinor } from '../lib/investments'
+import { fetchPriceUSD } from '../lib/prices'
 import Sheet from '../components/Sheet'
 import RecurringSheet from '../components/RecurringSheet'
 import InvestmentSheet, { INVESTMENT_TYPES } from '../components/InvestmentSheet'
@@ -28,6 +30,7 @@ export default function Accounts() {
   const [accountSheet, setAccountSheet] = useState<{ edit?: Account; balanceMinor?: number } | null>(null)
   const [recurringSheet, setRecurringSheet] = useState<{ edit?: Recurring } | null>(null)
   const [investmentSheet, setInvestmentSheet] = useState<{ edit?: Investment } | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const usdRate = settings?.usdRate ?? 300
 
@@ -39,7 +42,23 @@ export default function Accounts() {
     (s, a) => s + toLKR(balances.get(a.id) ?? 0, a.currency ?? 'LKR', usdRate),
     0
   )
-  const investedTotal = investments.reduce((s, i) => s + toLKR(i.valueMinor, i.currency, usdRate), 0)
+  const investedTotal = investments.reduce((s, i) => s + toLKR(currentValueMinor(i, usdRate), i.currency, usdRate), 0)
+  const hasMarket = investments.some(i => MARKET_TYPES.includes(i.type))
+
+  async function refreshPrices() {
+    setRefreshing(true)
+    const key = settings?.marketApiKey ?? ''
+    for (const inv of investments) {
+      if (!MARKET_TYPES.includes(inv.type)) continue
+      try {
+        const price = await fetchPriceUSD(inv, key)
+        await db.investments.update(inv.id, { livePriceMinor: Math.round(price * 100), livePriceAt: Date.now() })
+      } catch {
+        // skip assets we can't price right now (missing key, bad symbol, offline)
+      }
+    }
+    setRefreshing(false)
+  }
 
   return (
     <div className="px-4 pt-6">
@@ -167,13 +186,38 @@ export default function Accounts() {
       )}
 
       {/* Investments */}
-      <SectionHeader title="Investments & savings" onAdd={() => setInvestmentSheet({})} />
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Investments & savings</h2>
+        <div className="flex items-center gap-2">
+          {hasMarket && (
+            <button
+              onClick={refreshPrices}
+              disabled={refreshing}
+              className="rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300"
+            >
+              {refreshing ? '…' : '↻ Prices'}
+            </button>
+          )}
+          <button onClick={() => setInvestmentSheet({})} className="rounded-xl bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white shadow-md shadow-indigo-500/30">
+            + Add
+          </button>
+        </div>
+      </div>
       {investments.length === 0 ? (
-        <EmptyHint text="Track FDs, stocks, crypto, EPF and savings here — they count toward net worth." />
+        <EmptyHint text="Track FDs, stocks, crypto, gold, EPF and savings here — they count toward net worth." />
       ) : (
         <div className="mb-6 space-y-3">
           {investments.map(i => {
             const t = INVESTMENT_TYPES.find(t => t.id === i.type)
+            const curVal = currentValueMinor(i, usdRate)
+            const pl = profitMinor(i, usdRate)
+            const mat = i.type === 'fd' ? fdMaturityMinor(i) : null
+            const sub =
+              i.type === 'fd' && i.maturityDate
+                ? `Matures ${shortDate(i.maturityDate)}${mat != null ? ` · ~${fmt(mat, i.currency, { compactCents: true })}` : ''}`
+                : MARKET_TYPES.includes(i.type) && i.quantity != null
+                  ? `${i.quantity} ${i.unit ?? ''}${i.symbol ? ` · ${i.symbol}` : ''}`.trim()
+                  : t?.label
             return (
               <button
                 key={i.id}
@@ -183,12 +227,19 @@ export default function Accounts() {
                 <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/10 text-xl">{t?.emoji}</span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold">{i.name}</p>
-                  <p className="text-xs text-slate-400">
-                    {t?.label}
+                  <p className="truncate text-xs text-slate-400">
+                    {sub}
                     {i.note && ` · ${i.note}`}
                   </p>
                 </div>
-                <p className="text-base font-bold tabular-nums">{fmt(i.valueMinor, i.currency, { compactCents: true })}</p>
+                <div className="text-right">
+                  <p className="text-base font-bold tabular-nums">{fmt(curVal, i.currency, { compactCents: true })}</p>
+                  {pl != null && (
+                    <p className={`text-xs font-semibold tabular-nums ${pl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {pl >= 0 ? '▲' : '▼'} {fmt(Math.abs(pl), i.currency, { compactCents: true })}
+                    </p>
+                  )}
+                </div>
               </button>
             )
           })}

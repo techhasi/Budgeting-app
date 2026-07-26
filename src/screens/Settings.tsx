@@ -178,8 +178,8 @@ export default function SettingsScreen() {
               <li>Go to <b>console.cloud.google.com</b> → create a project</li>
               <li><b>APIs &amp; Services → Library</b> → enable <b>Google Calendar API</b></li>
               <li>
-                <b>OAuth consent screen</b> → External → add yourself as a <b>Test user</b>, add the scope
-                <b> calendar.readonly</b>
+                <b>OAuth consent screen</b> → External → add yourself as a <b>Test user</b>, add the scopes
+                <b> calendar.readonly</b> and <b>calendar.events</b> (events lets HasiKasi push reminders to your calendar)
               </li>
               <li>
                 <b>Credentials → Create → OAuth client ID → Web application</b>. Under <b>Authorised JavaScript origins</b>
@@ -188,6 +188,36 @@ export default function SettingsScreen() {
               <li>Copy the <b>Client ID</b> into the box above, then open Tasks → Calendar → Connect</li>
             </ol>
             <p className="mt-1.5 text-xs text-slate-400">The client id is public; no secret is stored.</p>
+          </details>
+        </div>
+      </Section>
+
+      <Section title="Market data">
+        <div className="px-4 py-3.5">
+          <p className="mb-3 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+            Live prices for <b>gold</b> and <b>stocks</b> come from Twelve Data (free tier). Paste a free API key below.
+            Crypto prices work without any key.
+          </p>
+          <SyncedInput
+            type="password"
+            placeholder="Twelve Data API key"
+            value={settings.marketApiKey ?? ''}
+            onCommit={v => update({ marketApiKey: v.trim() || undefined })}
+            className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
+          />
+          <details>
+            <summary className="cursor-pointer text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Where to get a free key
+            </summary>
+            <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              <li>Go to <b>twelvedata.com</b> → sign up (free)</li>
+              <li>Copy the <b>API key</b> from your dashboard</li>
+              <li>Paste it above — free tier allows ~800 lookups/day, plenty for a portfolio</li>
+            </ol>
+            <p className="mt-1.5 text-xs text-slate-400">
+              Gold is priced as XAU/USD (per troy ounce); grams and sovereigns are converted for you. The key is
+              stored only on this device.
+            </p>
           </details>
         </div>
       </Section>

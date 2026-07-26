@@ -54,7 +54,9 @@ const SECTIONS: { title: string; body: string[] }[] = [
       'Four account types: Cash, Bank, Debit card (works like bank money), and Credit card (a debt you owe).',
       'Credit cards show negative balances as you spend — that\'s money owed, and it correctly reduces net worth. Enter existing debt as a negative opening balance (e.g. -45000).',
       'Set a credit limit on each credit card to see remaining available credit and a limit-usage bar (amber past 70%, red past 90%).',
-      'Investments & savings (FDs, stocks, crypto, EPF) are tracked separately and count toward net worth. Tap one to update its value.'
+      'Investments & savings (FDs, stocks, crypto, gold, EPF) are tracked separately and count toward net worth. Tap one to update it.',
+      'Fixed deposits: set the principal, interest rate (or maturity value) and dates, and net worth grows gradually toward maturity. Optionally fund it from an account (the principal is moved out so nothing is double-counted) and get a maturity reminder.',
+      'Gold, crypto & stocks: enter the quantity held and what you paid, then tap Fetch live price — HasiKasi shows current value and profit/loss. Use ↻ Prices to refresh them all. Crypto is free; gold and stocks need a free Twelve Data key (Settings → Market data).'
     ]
   },
   {
@@ -69,8 +71,10 @@ const SECTIONS: { title: string; body: string[] }[] = [
   {
     title: '🔔 Reminders',
     body: [
-      'Email: daily nudge, salary-week (25th) and card-due (28th) reminders via GitHub Actions — setup guide in Settings → Reminders.',
-      'Phone notification: a simple iOS Shortcuts daily automation — guide in the same place.'
+      'Tap the 🔔 bell on the Overview screen to add dated reminders (rent, FD renewal, anything). A red badge counts what is due today or overdue.',
+      'For a real lock-screen alert on iPhone, tick “Also add to Google Calendar” — the reminder becomes a calendar event so iOS notifies you natively. (A home-screen PWA can\'t fire its own background alerts, so this is the reliable path.) Connect Google in Settings → Google Calendar first.',
+      'FD maturity reminders are created automatically when you tick the option on a fixed deposit.',
+      'Also available: daily/salary-week email reminders via GitHub Actions, and an iOS Shortcuts daily nudge — both set up in Settings → Reminders.'
     ]
   },
   {

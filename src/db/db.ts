@@ -102,6 +102,8 @@ export interface Settings {
   /** account auto-selected when adding an expense / income */
   defaultExpenseAccountId?: string
   defaultIncomeAccountId?: string
+  /** Twelve Data API key (free) for gold + stock live prices; crypto is keyless */
+  marketApiKey?: string
 }
 
 export type Priority = 'none' | 'low' | 'medium' | 'high'
@@ -166,15 +168,68 @@ export interface Recurring {
   createdAt: number
 }
 
+export type InvestmentType = 'savings' | 'fd' | 'stocks' | 'crypto' | 'gold' | 'epf' | 'other'
+/** Types that carry a live-priced market quantity (symbol + units held). */
+export const MARKET_TYPES: InvestmentType[] = ['stocks', 'crypto', 'gold']
+
 export interface Investment {
   id: string
   name: string
-  type: 'savings' | 'fd' | 'stocks' | 'crypto' | 'epf' | 'other'
-  /** current value in minor units of `currency` */
+  type: InvestmentType
+  /** manual/fallback current value in minor units of `currency`
+   *  (for market assets this is superseded by quantity × live price) */
   valueMinor: number
   currency: Currency
   note: string
   updatedAt: number
+
+  // ── Fixed deposits ──
+  /** FD: bank account the money was moved from (optional; drives a withdrawal) */
+  sourceAccountId?: string
+  /** FD: deposit/start date (ISO), defaults to creation day */
+  startDate?: string
+  /** FD: maturity date (ISO) */
+  maturityDate?: string
+  /** FD: annual interest rate, percent (e.g. 12.5) */
+  interestRate?: number
+  /** FD: explicit maturity value in minor units (overrides rate-based estimate) */
+  maturityAmountMinor?: number
+  /** linked reminder id (FD maturity) */
+  reminderId?: string
+
+  // ── Market assets (stocks / crypto / gold) ──
+  /** ticker / coin id / 'XAU' — see prices.ts */
+  symbol?: string
+  /** units held (shares, coins, or grams/oz of gold) */
+  quantity?: number
+  /** display/holding unit: 'shares' | 'coins' | 'g' | 'oz' | 'sovereign' */
+  unit?: string
+  /** total amount paid (cost basis) in minor units of `currency`, for profit/loss */
+  costBasisMinor?: number
+  /** cached live price per unit, in USD minor units */
+  livePriceMinor?: number
+  /** epoch ms of the last successful price fetch */
+  livePriceAt?: number
+}
+
+export type ReminderSource = 'manual' | 'fd'
+
+/** A dated reminder shown in-app and optionally mirrored to Google Calendar. */
+export interface Reminder {
+  id: string
+  title: string
+  /** ISO date YYYY-MM-DD */
+  date: string
+  /** HH:MM (24h), omitted = all-day */
+  time?: string
+  note?: string
+  done?: boolean
+  source: ReminderSource
+  /** linked entity id (e.g. investment for FD maturity) */
+  refId?: string
+  /** Google Calendar event id if mirrored there */
+  gcalEventId?: string
+  createdAt: number
 }
 
 /** A bank-SMS candidate awaiting user approval in the import inbox. */
@@ -205,6 +260,7 @@ export const db = new Dexie('budget-app') as Dexie & {
   investments: EntityTable<Investment, 'id'>
   tasks: EntityTable<Task, 'id'>
   taskLists: EntityTable<TaskList, 'id'>
+  reminders: EntityTable<Reminder, 'id'>
 }
 
 db.version(1).stores({
@@ -228,6 +284,10 @@ db.version(3).stores({
 db.version(4).stores({
   tasks: 'id, listId, dueDate, done, order',
   taskLists: 'id, order'
+})
+
+db.version(5).stores({
+  reminders: 'id, date, done'
 })
 
 export const uid = () => crypto.randomUUID()

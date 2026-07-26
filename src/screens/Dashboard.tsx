@@ -10,6 +10,8 @@ import TxnDetail from '../components/TxnDetail'
 import SmsImport from '../components/SmsImport'
 import SearchSheet from '../components/SearchSheet'
 import AddSheet from '../components/AddSheet'
+import RemindersSheet from '../components/RemindersSheet'
+import { dueReminders } from '../lib/reminders'
 import type { Account } from '../db/db'
 
 export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => void }) {
@@ -19,6 +21,7 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
   const accounts = useLiveQuery(() => db.accounts.toArray(), [], [])
   const pendingCount = useLiveQuery(() => db.pending.count(), [], 0)
+  const reminders = useLiveQuery(() => db.reminders.toArray(), [], [])
   // Due now plus a 5-day advance warning; fully-paid loans no longer nag
   const recurring = useLiveQuery(() => db.recurring.toArray(), [], [])
   const due = useLiveQuery(
@@ -35,6 +38,7 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
   const [detail, setDetail] = useState<Txn | null>(null)
   const [smsOpen, setSmsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [remindersOpen, setRemindersOpen] = useState(false)
   const [payCard, setPayCard] = useState<{ account: Account; dueMinor: number; currency: 'LKR' | 'USD' } | null>(null)
 
   const period = periods.length ? periods[Math.max(0, periods.length - 1 - periodOffset)] : undefined
@@ -118,6 +122,7 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
 
   const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
   const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
+  const dueReminderCount = dueReminders(reminders, todayISO()).length
 
   return (
     <div className="px-4 pt-6">
@@ -133,6 +138,18 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
           className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-sm dark:bg-slate-800/60"
         >
           🔍
+        </button>
+        <button
+          onClick={() => setRemindersOpen(true)}
+          aria-label="Reminders"
+          className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-xl shadow-sm dark:bg-slate-800/60"
+        >
+          🔔
+          {dueReminderCount > 0 && (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+              {dueReminderCount}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setSmsOpen(true)}
@@ -426,6 +443,7 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
       {detail && <TxnDetail txn={detail} onClose={() => setDetail(null)} />}
       {smsOpen && <SmsImport onClose={() => setSmsOpen(false)} />}
       {searchOpen && <SearchSheet onClose={() => setSearchOpen(false)} />}
+      {remindersOpen && <RemindersSheet onClose={() => setRemindersOpen(false)} />}
       {payCard && (
         <AddSheet
           initial={{

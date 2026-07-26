@@ -8,7 +8,8 @@
  */
 
 const GSI_SRC = 'https://accounts.google.com/gsi/client'
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly'
+// readonly powers the tasks overlay; events lets us push reminders to the calendar.
+const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyGoogle = any
@@ -112,4 +113,69 @@ export async function fetchEvents(fromISO: string, toISO: string): Promise<GcalE
     })()
     return { id: e.id, title: e.summary ?? '(no title)', date, time, allDay }
   })
+}
+
+function nextDayISO(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + 1)
+  return localDate(d)
+}
+
+/**
+ * Create a Google Calendar event so iOS/Android fire a native reminder.
+ * Returns the created event id. Requires an active connection (user gesture).
+ */
+export async function createEvent(ev: {
+  title: string
+  /** ISO date YYYY-MM-DD */
+  date: string
+  /** HH:MM (24h); omit for an all-day reminder */
+  time?: string
+  note?: string
+  /** popup minutes before the start (timed events only) */
+  reminderMinutes?: number
+}): Promise<string> {
+  if (!isGcalConnected()) throw new Error('not-connected')
+  const body: Record<string, unknown> = {
+    summary: ev.title,
+    ...(ev.note ? { description: ev.note } : {})
+  }
+  if (ev.time) {
+    const start = new Date(`${ev.date}T${ev.time}:00`)
+    const end = new Date(start.getTime() + 60 * 60_000)
+    body.start = { dateTime: start.toISOString() }
+    body.end = { dateTime: end.toISOString() }
+    body.reminders = { useDefault: false, overrides: [{ method: 'popup', minutes: ev.reminderMinutes ?? 30 }] }
+  } else {
+    // All-day: let the calendar's default all-day reminder handle notification timing.
+    body.start = { date: ev.date }
+    body.end = { date: nextDayISO(ev.date) }
+    body.reminders = { useDefault: true }
+  }
+  const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (res.status === 401) {
+    disconnectGcal()
+    throw new Error('not-connected')
+  }
+  if (!res.ok) throw new Error(`Google Calendar error ${res.status}`)
+  const data = (await res.json()) as { id: string }
+  return data.id
+}
+
+/** Best-effort delete of a previously created event (ignores 404/410). */
+export async function deleteEvent(eventId: string): Promise<void> {
+  if (!isGcalConnected()) throw new Error('not-connected')
+  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` }
+  })
+  if (res.status === 401) {
+    disconnectGcal()
+    throw new Error('not-connected')
+  }
+  if (!res.ok && res.status !== 404 && res.status !== 410) throw new Error(`Google Calendar error ${res.status}`)
 }
