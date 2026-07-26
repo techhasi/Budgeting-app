@@ -7,6 +7,7 @@ import { computeBalances, addAdjustment } from '../lib/balances'
 import { loanRemainingByAccount, loanInstallmentByAccount } from '../lib/recurring'
 import { currentValueMinor, profitMinor, fdMaturityMinor } from '../lib/investments'
 import { fetchPriceUSD } from '../lib/prices'
+import { marketApiKey } from '../lib/env'
 import Sheet from '../components/Sheet'
 import RecurringSheet from '../components/RecurringSheet'
 import InvestmentSheet, { INVESTMENT_TYPES } from '../components/InvestmentSheet'
@@ -47,7 +48,7 @@ export default function Accounts() {
 
   async function refreshPrices() {
     setRefreshing(true)
-    const key = settings?.marketApiKey ?? ''
+    const key = marketApiKey(settings) ?? ''
     for (const inv of investments) {
       if (!MARKET_TYPES.includes(inv.type)) continue
       try {

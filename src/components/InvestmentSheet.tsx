@@ -4,6 +4,7 @@ import { db, uid, DEFAULT_SETTINGS, MARKET_TYPES, type Currency, type Investment
 import { parseAmount, fmt, convertMinor, CURRENCY_SYMBOL } from '../lib/money'
 import { addAdjustment } from '../lib/balances'
 import { fetchPriceUSD, goldQtyToOz } from '../lib/prices'
+import { gcalClientId, marketApiKey } from '../lib/env'
 import { fdMaturityMinor } from '../lib/investments'
 import { addReminder, deleteReminder } from '../lib/reminders'
 import { todayISO } from '../lib/dates'
@@ -110,7 +111,7 @@ export default function InvestmentSheet({ edit, onClose }: { edit?: Investment; 
     setFetching(true)
     setFetchErr('')
     try {
-      const price = await fetchPriceUSD({ type, symbol: type === 'gold' ? symbol || 'XAU/USD' : symbol }, settings?.marketApiKey ?? '')
+      const price = await fetchPriceUSD({ type, symbol: type === 'gold' ? symbol || 'XAU/USD' : symbol }, marketApiKey(settings) ?? '')
       setPriceUSD(price)
     } catch (e) {
       setFetchErr(e instanceof Error ? e.message : 'Price lookup failed')
@@ -156,7 +157,7 @@ export default function InvestmentSheet({ edit, onClose }: { edit?: Investment; 
         const matStr = maturityPreview != null ? ` — ${fmt(maturityPreview, currency, { compactCents: true })} at maturity` : ''
         const { reminder } = await addReminder(
           { title: `FD matures: ${name.trim()}`, date: fields.maturityDate, note: `Fixed deposit${matStr}`, source: 'fd', refId: id },
-          { pushToCalendar: true, clientId: settings?.gcalClientId }
+          { pushToCalendar: true, clientId: gcalClientId(settings) }
         )
         fields.reminderId = reminder.id
       } else {
@@ -315,7 +316,7 @@ export default function InvestmentSheet({ edit, onClose }: { edit?: Investment; 
             <input type="checkbox" checked={remindMaturity} onChange={e => setRemindMaturity(e.target.checked)} className="h-5 w-5 accent-indigo-500" />
           </label>
           {remindMaturity && !maturityDate && <p className="mb-3 text-xs text-amber-500">Set a maturity date to enable the reminder.</p>}
-          {remindMaturity && !settings?.gcalClientId && (
+          {remindMaturity && !gcalClientId(settings) && (
             <p className="mb-3 text-xs text-slate-400">Connect Google Calendar in Settings to also get a lock-screen alert; otherwise it stays in-app only.</p>
           )}
         </>
@@ -367,7 +368,7 @@ export default function InvestmentSheet({ edit, onClose }: { edit?: Investment; 
             {fetching ? 'Fetching…' : priceUSD != null ? `↻ Refresh price ($${priceUSD.toLocaleString()})` : '📡 Fetch live price'}
           </button>
           {fetchErr && <p className="mb-3 text-center text-xs font-medium text-rose-500">{fetchErr}</p>}
-          {type !== 'crypto' && !settings?.marketApiKey && (
+          {type !== 'crypto' && !marketApiKey(settings) && (
             <p className="mb-3 text-xs text-slate-400">Add a free Twelve Data API key in Settings to fetch {type === 'gold' ? 'gold' : 'stock'} prices.</p>
           )}
           {preview && (

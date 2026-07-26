@@ -4,6 +4,7 @@ import { db, DEFAULT_SETTINGS, type Account, type Settings } from '../db/db'
 import { exportBackup, importBackup } from '../lib/backup'
 import { autoBackup, normalizeRepo } from '../lib/cloudBackup'
 import { lockSupported, enrollLock, verifyLock } from '../lib/appLock'
+import { ENV_GCAL_CLIENT_ID, ENV_MARKET_KEY } from '../lib/env'
 import GuideSheet from '../components/GuideSheet'
 import CloudRestoreSheet from '../components/CloudRestoreSheet'
 
@@ -165,11 +166,14 @@ export default function SettingsScreen() {
             about an hour, so you tap Connect once per session.
           </p>
           <SyncedInput
-            placeholder="Google OAuth client id"
+            placeholder={ENV_GCAL_CLIENT_ID ? 'Using deploy-time client id (override here)' : 'Google OAuth client id'}
             value={settings.gcalClientId ?? ''}
             onCommit={v => update({ gcalClientId: v.trim() || undefined })}
             className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
+          {ENV_GCAL_CLIENT_ID && !settings.gcalClientId && (
+            <p className="mb-2 text-xs text-emerald-600 dark:text-emerald-400">✓ A client id is set from the deploy — leave blank to use it.</p>
+          )}
           <details>
             <summary className="cursor-pointer text-xs font-semibold text-slate-500 dark:text-slate-400">
               One-time setup guide
@@ -200,11 +204,14 @@ export default function SettingsScreen() {
           </p>
           <SyncedInput
             type="password"
-            placeholder="Twelve Data API key"
+            placeholder={ENV_MARKET_KEY ? 'Using deploy-time key (override here)' : 'Twelve Data API key'}
             value={settings.marketApiKey ?? ''}
             onCommit={v => update({ marketApiKey: v.trim() || undefined })}
             className="mb-2 w-full rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/60"
           />
+          {ENV_MARKET_KEY && !settings.marketApiKey && (
+            <p className="mb-2 text-xs text-emerald-600 dark:text-emerald-400">✓ A key is set from the deploy — leave blank to use it.</p>
+          )}
           <details>
             <summary className="cursor-pointer text-xs font-semibold text-slate-500 dark:text-slate-400">
               Where to get a free key

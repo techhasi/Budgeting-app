@@ -4,6 +4,7 @@ import { db, DEFAULT_SETTINGS, type Task } from '../db/db'
 import { todayISO } from '../lib/dates'
 import { toggleTask } from '../lib/tasks'
 import { fetchEvents, isGcalConnected, connectGcal, type GcalEvent } from '../lib/gcal'
+import { gcalClientId } from '../lib/env'
 import TaskRow from './TaskRow'
 import TaskSheet from './TaskSheet'
 
@@ -65,7 +66,7 @@ export default function TaskCalendar() {
   }, [events])
 
   // Load Google events for the visible month when connected
-  const clientId = settings?.gcalClientId
+  const clientId = gcalClientId(settings)
   useEffect(() => {
     if (!clientId || !isGcalConnected()) return
     fetchEvents(grid[0], grid[41])

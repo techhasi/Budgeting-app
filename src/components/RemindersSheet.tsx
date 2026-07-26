@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, DEFAULT_SETTINGS, type Reminder } from '../db/db'
 import { addReminder, deleteReminder, toggleReminderDone } from '../lib/reminders'
+import { gcalClientId } from '../lib/env'
 import { friendlyDate, todayISO, daysUntil } from '../lib/dates'
 import Sheet from './Sheet'
 
@@ -12,7 +13,7 @@ export default function RemindersSheet({ onClose }: { onClose: () => void }) {
   const settings = useLiveQuery(() => db.settings.get('app'), [], DEFAULT_SETTINGS)
   const reminders = useLiveQuery(() => db.reminders.orderBy('date').toArray(), [], [])
 
-  const hasGcal = !!settings?.gcalClientId
+  const hasGcal = !!gcalClientId(settings)
   const [title, setTitle] = useState('')
   const [date, setDate] = useState(todayISO())
   const [time, setTime] = useState('')
@@ -26,7 +27,7 @@ export default function RemindersSheet({ onClose }: { onClose: () => void }) {
     setMsg('')
     const { calendarPushed } = await addReminder(
       { title: title.trim(), date, time: time || undefined, source: 'manual' },
-      { pushToCalendar: hasGcal && toCalendar, clientId: settings?.gcalClientId }
+      { pushToCalendar: hasGcal && toCalendar, clientId: gcalClientId(settings) }
     )
     setBusy(false)
     setTitle('')

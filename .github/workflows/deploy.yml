@@ -28,6 +28,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Public by design — safe to bake into the client bundle.
+          VITE_GCAL_CLIENT_ID: ${{ vars.GCAL_CLIENT_ID }}
+          # Low-value read-only market key; ships in the public bundle. Rotate if abused.
+          VITE_MARKET_KEY: ${{ secrets.MARKET_KEY }}
+          # NOTE: the backup PAT is intentionally NOT here — it must stay device-only.
       - uses: actions/configure-pages@v5
         with:
           enablement: true
