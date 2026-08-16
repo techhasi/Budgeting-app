@@ -453,10 +453,14 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
             toAccountId: payCard.account.id,
             note: `${payCard.account.name} bill`
           }}
-          onSaved={async () => {
-            await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
-            // Paying the statement covers this month's installment(s) too
-            await payCardAdvanceLoans(payCard.account.id)
+          onSaved={async saved => {
+            // Only treat it as a bill payment if the saved txn actually moved money
+            // INTO this card — otherwise editing the transfer would wrongly advance loans.
+            if (saved.type === 'transfer' && saved.toAccountId === payCard.account.id) {
+              await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
+              // Paying the statement covers this month's installment(s) too
+              await payCardAdvanceLoans(payCard.account.id)
+            }
           }}
           onClose={() => setPayCard(null)}
         />
