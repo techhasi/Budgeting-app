@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, uid, DEFAULT_SETTINGS, MARKET_TYPES, type Account, type Currency, type Investment, type Recurring, type Txn } from '../db/db'
 import { fmt, toLKR, parseAmount, convertMinor, CURRENCY_SYMBOL } from '../lib/money'
-import { shortDate, currentMonth, endOfMonthISO } from '../lib/dates'
+import { shortDate, currentMonth, endOfMonthISO, periodLabel } from '../lib/dates'
+import { txnsInPeriod } from '../lib/periods'
 import { computeBalances, addAdjustment } from '../lib/balances'
 import { loanRemainingByAccount, loanInstallmentByAccount } from '../lib/recurring'
 import { currentValueMinor, profitMinor, fdMaturityMinor } from '../lib/investments'
@@ -288,21 +289,7 @@ function EmptyHint({ text }: { text: string }) {
   )
 }
 
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-
-/** Shift a "YYYY-MM" month key by whole months. */
-function shiftMonth(key: string, delta: number): string {
-  const [y, m] = key.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function monthLabel(key: string): string {
-  const [y, m] = key.split('-').map(Number)
-  return `${MONTH_NAMES[m - 1]} ${y}`
-}
-
-/** Month-by-month view of a single account's activity: spent, earned, and every transaction. */
+/** Salary-cycle view of a single account's activity: spent, earned, and every transaction. */
 function AccountDetailSheet({
   account,
   balanceMinor,
@@ -317,25 +304,27 @@ function AccountDetailSheet({
   onEdit: () => void
 }) {
   const settings = useLiveQuery(() => db.settings.get('app'), [], DEFAULT_SETTINGS)
+  const periods = useLiveQuery(() => db.periods.orderBy('startDate').toArray(), [], [])
   const txns = useLiveQuery(() => db.txns.where('accountId').equals(account.id).toArray(), [account.id], [])
   const incoming = useLiveQuery(() => db.txns.filter(t => t.toAccountId === account.id).toArray(), [account.id], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
 
   const usdRate = settings?.usdRate ?? 300
   const accCur = account.currency ?? 'LKR'
-  const [month, setMonth] = useState(currentMonth())
-  const atCurrentMonth = month >= currentMonth()
+  const [periodOffset, setPeriodOffset] = useState(0) // 0 = current cycle
+  const period = periods.length ? periods[Math.max(0, periods.length - 1 - periodOffset)] : undefined
 
   const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
   const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
 
   const rows = useMemo(() => {
+    if (!period) return []
     // toAccountId query can't be an index (schema has none), so incoming is scanned in memory
     const all = [...txns, ...incoming.filter(t => t.type === 'transfer')]
-    return all
-      .filter(t => t.date.slice(0, 7) === month)
-      .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1))
-  }, [txns, incoming, month])
+    return txnsInPeriod(all, period).sort((a, b) =>
+      a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1
+    )
+  }, [txns, incoming, period])
 
   let spent = 0
   let earned = 0
@@ -376,15 +365,19 @@ function AccountDetailSheet({
         Balance {fmt(balanceMinor, accCur, { compactCents: true })}
       </p>
 
-      {/* Month navigator */}
+      {/* Cycle navigator */}
       <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => setMonth(m => shiftMonth(m, -1))} className="rounded-xl bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800">
+        <button
+          onClick={() => setPeriodOffset(o => Math.min(o + 1, periods.length - 1))}
+          disabled={periodOffset >= periods.length - 1}
+          className="rounded-xl bg-slate-100 px-3 py-1.5 text-sm disabled:opacity-30 dark:bg-slate-800"
+        >
           ‹
         </button>
-        <p className="text-sm font-bold">{monthLabel(month)}</p>
+        <p className="text-sm font-bold">{period ? periodLabel(period.startDate, period.endDate) : '—'}</p>
         <button
-          onClick={() => setMonth(m => shiftMonth(m, 1))}
-          disabled={atCurrentMonth}
+          onClick={() => setPeriodOffset(o => Math.max(o - 1, 0))}
+          disabled={periodOffset === 0}
           className="rounded-xl bg-slate-100 px-3 py-1.5 text-sm disabled:opacity-30 dark:bg-slate-800"
         >
           ›
@@ -407,7 +400,7 @@ function AccountDetailSheet({
       <div className="space-y-2">
         {rows.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400 dark:border-slate-700">
-            No activity in {monthLabel(month)}.
+            No activity this cycle.
           </p>
         ) : (
           rows.map(t => {
