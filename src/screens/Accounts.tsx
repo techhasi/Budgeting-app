@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, uid, DEFAULT_SETTINGS, MARKET_TYPES, type Account, type Currency, type Investment, type Recurring } from '../db/db'
-import { fmt, toLKR, parseAmount, CURRENCY_SYMBOL } from '../lib/money'
+import { db, uid, DEFAULT_SETTINGS, MARKET_TYPES, type Account, type Currency, type Investment, type Recurring, type Txn } from '../db/db'
+import { fmt, toLKR, parseAmount, convertMinor, CURRENCY_SYMBOL } from '../lib/money'
 import { shortDate, currentMonth, endOfMonthISO } from '../lib/dates'
 import { computeBalances, addAdjustment } from '../lib/balances'
 import { loanRemainingByAccount, loanInstallmentByAccount } from '../lib/recurring'
@@ -29,6 +29,7 @@ export default function Accounts() {
   const investments = useLiveQuery(() => db.investments.toArray(), [], [])
 
   const [accountSheet, setAccountSheet] = useState<{ edit?: Account; balanceMinor?: number } | null>(null)
+  const [detailSheet, setDetailSheet] = useState<{ account: Account; balanceMinor: number } | null>(null)
   const [recurringSheet, setRecurringSheet] = useState<{ edit?: Recurring } | null>(null)
   const [investmentSheet, setInvestmentSheet] = useState<{ edit?: Investment } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -88,7 +89,7 @@ export default function Accounts() {
           return (
             <button
               key={a.id}
-              onClick={() => setAccountSheet({ edit: a, balanceMinor: bal })}
+              onClick={() => setDetailSheet({ account: a, balanceMinor: bal })}
               className="block w-full rounded-2xl bg-white p-4 text-left shadow-sm active:bg-slate-50 dark:bg-slate-800/60 dark:active:bg-slate-700/40"
             >
             <div className="flex w-full items-center gap-3">
@@ -247,6 +248,18 @@ export default function Accounts() {
         </div>
       )}
 
+      {detailSheet && (
+        <AccountDetailSheet
+          account={detailSheet.account}
+          balanceMinor={detailSheet.balanceMinor}
+          accounts={accounts}
+          onClose={() => setDetailSheet(null)}
+          onEdit={() => {
+            setAccountSheet({ edit: detailSheet.account, balanceMinor: detailSheet.balanceMinor })
+            setDetailSheet(null)
+          }}
+        />
+      )}
       {accountSheet && (
         <AccountSheet edit={accountSheet.edit} balanceMinor={accountSheet.balanceMinor} onClose={() => setAccountSheet(null)} />
       )}
@@ -272,6 +285,149 @@ function EmptyHint({ text }: { text: string }) {
     <p className="mb-6 rounded-2xl border border-dashed border-slate-300 p-4 text-center text-xs text-slate-400 dark:border-slate-700">
       {text}
     </p>
+  )
+}
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+/** Shift a "YYYY-MM" month key by whole months. */
+function shiftMonth(key: string, delta: number): string {
+  const [y, m] = key.split('-').map(Number)
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthLabel(key: string): string {
+  const [y, m] = key.split('-').map(Number)
+  return `${MONTH_NAMES[m - 1]} ${y}`
+}
+
+/** Month-by-month view of a single account's activity: spent, earned, and every transaction. */
+function AccountDetailSheet({
+  account,
+  balanceMinor,
+  accounts,
+  onClose,
+  onEdit
+}: {
+  account: Account
+  balanceMinor: number
+  accounts: Account[]
+  onClose: () => void
+  onEdit: () => void
+}) {
+  const settings = useLiveQuery(() => db.settings.get('app'), [], DEFAULT_SETTINGS)
+  const txns = useLiveQuery(() => db.txns.where('accountId').equals(account.id).toArray(), [account.id], [])
+  const incoming = useLiveQuery(() => db.txns.filter(t => t.toAccountId === account.id).toArray(), [account.id], [])
+  const categories = useLiveQuery(() => db.categories.toArray(), [], [])
+
+  const usdRate = settings?.usdRate ?? 300
+  const accCur = account.currency ?? 'LKR'
+  const [month, setMonth] = useState(currentMonth())
+  const atCurrentMonth = month >= currentMonth()
+
+  const catById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories])
+  const accById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
+
+  const rows = useMemo(() => {
+    // toAccountId query can't be an index (schema has none), so incoming is scanned in memory
+    const all = [...txns, ...incoming.filter(t => t.type === 'transfer')]
+    return all
+      .filter(t => t.date.slice(0, 7) === month)
+      .sort((a, b) => (a.date === b.date ? b.createdAt - a.createdAt : a.date < b.date ? 1 : -1))
+  }, [txns, incoming, month])
+
+  let spent = 0
+  let earned = 0
+  for (const t of rows) {
+    if (t.adjustment || t.type === 'transfer') continue
+    const inAcc = convertMinor(t.amountMinor, t.currency, accCur, usdRate)
+    if (t.type === 'expense') spent += inAcc
+    else earned += inAcc
+  }
+
+  function rowView(t: Txn) {
+    if (t.type === 'transfer') {
+      const out = t.accountId === account.id
+      const other = accById.get(out ? (t.toAccountId ?? '') : t.accountId)?.name ?? 'account'
+      const amt = out ? convertMinor(t.amountMinor, t.currency, accCur, usdRate) : t.toAmountMinor ?? convertMinor(t.amountMinor, t.currency, accCur, usdRate)
+      return { emoji: '🔄', title: out ? `Transfer to ${other}` : `Transfer from ${other}`, sub: t.note || undefined, sign: out ? -1 : 1, amt, muted: true }
+    }
+    const income = t.type === 'income'
+    const amt = convertMinor(t.amountMinor, t.currency, accCur, usdRate)
+    if (t.adjustment) return { emoji: '⚖️', title: t.note || 'Balance adjustment', sub: undefined, sign: income ? 1 : -1, amt, muted: true }
+    const cat = catById.get(t.categoryId)
+    return { emoji: cat?.emoji ?? (income ? '💰' : '💸'), title: t.note || cat?.name || (income ? 'Income' : 'Expense'), sub: t.note ? cat?.name : undefined, sign: income ? 1 : -1, amt, muted: false }
+  }
+
+  return (
+    <Sheet
+      onClose={onClose}
+      title={
+        <div className="flex items-center justify-between">
+          <span className="truncate">{account.name}</span>
+          <button onClick={onEdit} className="ml-2 shrink-0 rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            Edit
+          </button>
+        </div>
+      }
+    >
+      <p className="-mt-1 mb-3 text-xs text-slate-400">
+        Balance {fmt(balanceMinor, accCur, { compactCents: true })}
+      </p>
+
+      {/* Month navigator */}
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => setMonth(m => shiftMonth(m, -1))} className="rounded-xl bg-slate-100 px-3 py-1.5 text-sm dark:bg-slate-800">
+          ‹
+        </button>
+        <p className="text-sm font-bold">{monthLabel(month)}</p>
+        <button
+          onClick={() => setMonth(m => shiftMonth(m, 1))}
+          disabled={atCurrentMonth}
+          className="rounded-xl bg-slate-100 px-3 py-1.5 text-sm disabled:opacity-30 dark:bg-slate-800"
+        >
+          ›
+        </button>
+      </div>
+
+      {/* Spent / earned summary */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="rounded-2xl bg-rose-50 p-3 dark:bg-rose-500/10">
+          <p className="text-xs font-medium text-rose-600 dark:text-rose-400">Spent</p>
+          <p className="text-lg font-bold tabular-nums text-rose-600 dark:text-rose-400">{fmt(spent, accCur, { compactCents: true })}</p>
+        </div>
+        <div className="rounded-2xl bg-emerald-50 p-3 dark:bg-emerald-500/10">
+          <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">Earned</p>
+          <p className="text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{fmt(earned, accCur, { compactCents: true })}</p>
+        </div>
+      </div>
+
+      {/* Transactions */}
+      <div className="space-y-2">
+        {rows.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-xs text-slate-400 dark:border-slate-700">
+            No activity in {monthLabel(month)}.
+          </p>
+        ) : (
+          rows.map(t => {
+            const v = rowView(t)
+            return (
+              <div key={t.id} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-800/60">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-base dark:bg-slate-700/60">{v.emoji}</span>
+                <div className="min-w-0 flex-1">
+                  <p className={`truncate text-sm font-medium ${v.muted ? 'text-slate-500 dark:text-slate-400' : ''}`}>{v.title}</p>
+                  <p className="truncate text-xs text-slate-400">{shortDate(t.date)}{v.sub ? ` · ${v.sub}` : ''}</p>
+                </div>
+                <p className={`shrink-0 text-sm font-bold tabular-nums ${v.muted ? 'text-slate-400' : v.sign > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  {v.sign > 0 ? '+' : '−'}{fmt(v.amt, accCur, { compactCents: true })}
+                </p>
+              </div>
+            )
+          })
+        )}
+      </div>
+    </Sheet>
   )
 }
 

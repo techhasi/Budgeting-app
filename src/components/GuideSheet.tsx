@@ -52,6 +52,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     title: '💳 Accounts, cards & net worth',
     body: [
       'Four account types: Cash, Bank, Debit card (works like bank money), and Credit card (a debt you owe).',
+      'Tap any account to see its month — what you spent, what you earned, and every transaction (including transfers in/out). Use ‹ › to flip through previous months. The Edit button opens the account settings.',
       'Credit cards show negative balances as you spend — that\'s money owed, and it correctly reduces net worth. Enter existing debt as a negative opening balance (e.g. -45000).',
       'Set a credit limit on each credit card to see remaining available credit and a limit-usage bar (amber past 70%, red past 90%).',
       'Investments & savings (FDs, stocks, crypto, gold, EPF) are tracked separately and count toward net worth. Tap one to update it.',
