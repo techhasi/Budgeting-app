@@ -284,12 +284,16 @@ export default function Accounts() {
             note: `${payCard.account.name} bill`
           }}
           onSaved={async saved => {
-            // Only treat it as a bill payment if the saved txn actually moved money
-            // INTO this card — otherwise editing the transfer would wrongly advance loans.
+            // Only a transfer INTO this card counts as a bill payment.
             if (saved.type === 'transfer' && saved.toAccountId === payCard.account.id) {
-              await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
-              // Paying the statement covers this month's installment(s) too
-              await payCardAdvanceLoans(payCard.account.id)
+              const paidIntoCard = saved.toAmountMinor ?? saved.amountMinor
+              // Settle the cycle (advance the installment loan, mark paid) only when the
+              // full bill is covered. Partial payments just lower the balance, so you can
+              // pay again whenever more money comes in.
+              if (paidIntoCard >= payCard.dueMinor) {
+                await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
+                await payCardAdvanceLoans(payCard.account.id)
+              }
             }
           }}
           onClose={() => setPayCard(null)}
@@ -403,11 +407,19 @@ function AccountDetailSheet({
         Balance {fmt(balanceMinor, accCur, { compactCents: true })}
       </p>
 
-      {/* Pay the credit-card bill early — records one bank→card transfer.
-          Hidden once marked paid this cycle (matches the Overview screen). */}
-      {account.type === 'credit' && account.lastPaidMonth === currentMonth() ? (
+      {/* Pay the credit-card bill — as often as you like. The amount tracks what's
+          still owed, so partial payments just leave a smaller balance to pay next time. */}
+      {account.type === 'credit' && dueMinor > 0 && (
+        <button
+          onClick={onPayBill}
+          className="mb-3 w-full rounded-2xl bg-indigo-500 py-3 font-bold text-white shadow-lg shadow-indigo-500/30"
+        >
+          💳 Pay bill · {fmt(dueMinor, accCur, { compactCents: true })}
+        </button>
+      )}
+      {account.type === 'credit' && dueMinor <= 0 && account.lastPaidMonth === currentMonth() && (
         <div className="mb-3 flex items-center justify-between rounded-2xl bg-emerald-50 px-4 py-3 dark:bg-emerald-500/10">
-          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">✓ Bill paid this cycle</span>
+          <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">✓ Bill settled this cycle</span>
           <button
             onClick={() => db.accounts.where('id').equals(account.id).modify(a => { delete a.lastPaidMonth })}
             className="rounded-lg bg-white px-3 py-1 text-xs font-semibold text-slate-500 shadow-sm dark:bg-slate-800"
@@ -415,15 +427,6 @@ function AccountDetailSheet({
             Undo
           </button>
         </div>
-      ) : (
-        account.type === 'credit' && dueMinor > 0 && (
-          <button
-            onClick={onPayBill}
-            className="mb-3 w-full rounded-2xl bg-indigo-500 py-3 font-bold text-white shadow-lg shadow-indigo-500/30"
-          >
-            💳 Pay bill · {fmt(dueMinor, accCur, { compactCents: true })}
-          </button>
-        )
       )}
 
       {/* Cycle navigator */}

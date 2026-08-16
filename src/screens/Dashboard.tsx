@@ -454,12 +454,16 @@ export default function Dashboard({ onOpenSettings }: { onOpenSettings: () => vo
             note: `${payCard.account.name} bill`
           }}
           onSaved={async saved => {
-            // Only treat it as a bill payment if the saved txn actually moved money
-            // INTO this card — otherwise editing the transfer would wrongly advance loans.
+            // Only a transfer INTO this card counts as a bill payment.
             if (saved.type === 'transfer' && saved.toAccountId === payCard.account.id) {
-              await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
-              // Paying the statement covers this month's installment(s) too
-              await payCardAdvanceLoans(payCard.account.id)
+              const paidIntoCard = saved.toAmountMinor ?? saved.amountMinor
+              // Settle the cycle (advance the installment loan, mark paid) only when the
+              // full bill is covered. Partial payments just lower the balance, so you can
+              // pay again whenever more money comes in.
+              if (paidIntoCard >= payCard.dueMinor) {
+                await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
+                await payCardAdvanceLoans(payCard.account.id)
+              }
             }
           }}
           onClose={() => setPayCard(null)}

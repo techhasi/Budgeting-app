@@ -53,7 +53,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     body: [
       'Four account types: Cash, Bank, Debit card (works like bank money), and Credit card (a debt you owe).',
       'Tap any account to see its salary cycle — what you spent, what you earned, and every transaction (including transfers in/out). Use ‹ › to step through previous cycles. The Edit button opens the account settings.',
-      'Credit cards: tap the card to Pay bill any time (early is fine) — it records one bank→card transfer for the amount owed and folds in this month\'s loan installment. Loans/installments: tap them under Recurring & loans to "Log installment now" or "Pay off remaining" ahead of the due date.',
+      'Credit cards: tap the card and Pay bill any time — it opens a bank→card transfer prefilled with what\'s owed, but you can lower the amount to pay part of it. Pay as often as you like; the button keeps showing the remaining balance until it\'s cleared. Paying the whole bill also advances that month\'s loan installment. Loans/installments: tap them under Recurring & loans to "Log installment now" or "Pay off remaining" ahead of the due date.',
       'Credit cards show negative balances as you spend — that\'s money owed, and it correctly reduces net worth. Enter existing debt as a negative opening balance (e.g. -45000).',
       'Set a credit limit on each credit card to see remaining available credit and a limit-usage bar (amber past 70%, red past 90%).',
       'Investments & savings (FDs, stocks, crypto, gold, EPF) are tracked separately and count toward net worth. Tap one to update it.',
