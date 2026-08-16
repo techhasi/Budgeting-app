@@ -5,11 +5,12 @@ import { fmt, toLKR, parseAmount, convertMinor, CURRENCY_SYMBOL } from '../lib/m
 import { shortDate, currentMonth, endOfMonthISO, periodLabel } from '../lib/dates'
 import { txnsInPeriod } from '../lib/periods'
 import { computeBalances, addAdjustment } from '../lib/balances'
-import { loanRemainingByAccount, loanInstallmentByAccount } from '../lib/recurring'
+import { loanRemainingByAccount, loanInstallmentByAccount, payCardAdvanceLoans } from '../lib/recurring'
 import { currentValueMinor, profitMinor, fdMaturityMinor } from '../lib/investments'
 import { fetchPriceUSD } from '../lib/prices'
 import { marketApiKey } from '../lib/env'
 import Sheet from '../components/Sheet'
+import AddSheet from '../components/AddSheet'
 import RecurringSheet from '../components/RecurringSheet'
 import InvestmentSheet, { INVESTMENT_TYPES } from '../components/InvestmentSheet'
 
@@ -31,6 +32,7 @@ export default function Accounts() {
 
   const [accountSheet, setAccountSheet] = useState<{ edit?: Account; balanceMinor?: number } | null>(null)
   const [detailSheet, setDetailSheet] = useState<{ account: Account; balanceMinor: number } | null>(null)
+  const [payCard, setPayCard] = useState<{ account: Account; dueMinor: number } | null>(null)
   const [recurringSheet, setRecurringSheet] = useState<{ edit?: Recurring } | null>(null)
   const [investmentSheet, setInvestmentSheet] = useState<{ edit?: Investment } | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -249,16 +251,44 @@ export default function Accounts() {
         </div>
       )}
 
-      {detailSheet && (
-        <AccountDetailSheet
-          account={detailSheet.account}
-          balanceMinor={detailSheet.balanceMinor}
-          accounts={accounts}
-          onClose={() => setDetailSheet(null)}
-          onEdit={() => {
-            setAccountSheet({ edit: detailSheet.account, balanceMinor: detailSheet.balanceMinor })
-            setDetailSheet(null)
+      {detailSheet && (() => {
+        const a = detailSheet.account
+        const bal = balances.get(a.id) ?? detailSheet.balanceMinor
+        const dueMinor =
+          a.type === 'credit' ? Math.max(0, -bal - (loanRem.get(a.id) ?? 0)) + (loanInst.get(a.id) ?? 0) : 0
+        return (
+          <AccountDetailSheet
+            account={a}
+            balanceMinor={bal}
+            dueMinor={dueMinor}
+            accounts={accounts}
+            onClose={() => setDetailSheet(null)}
+            onEdit={() => {
+              setAccountSheet({ edit: a, balanceMinor: bal })
+              setDetailSheet(null)
+            }}
+            onPayBill={() => {
+              setPayCard({ account: a, dueMinor })
+              setDetailSheet(null)
+            }}
+          />
+        )
+      })()}
+      {payCard && (
+        <AddSheet
+          initial={{
+            type: 'transfer',
+            amount: (payCard.dueMinor / 100).toFixed(2),
+            currency: payCard.account.currency ?? 'LKR',
+            toAccountId: payCard.account.id,
+            note: `${payCard.account.name} bill`
           }}
+          onSaved={async () => {
+            await db.accounts.update(payCard.account.id, { lastPaidMonth: currentMonth(), statementMinor: undefined })
+            // Paying the statement covers this month's installment(s) too
+            await payCardAdvanceLoans(payCard.account.id)
+          }}
+          onClose={() => setPayCard(null)}
         />
       )}
       {accountSheet && (
@@ -293,15 +323,19 @@ function EmptyHint({ text }: { text: string }) {
 function AccountDetailSheet({
   account,
   balanceMinor,
+  dueMinor,
   accounts,
   onClose,
-  onEdit
+  onEdit,
+  onPayBill
 }: {
   account: Account
   balanceMinor: number
+  dueMinor: number
   accounts: Account[]
   onClose: () => void
   onEdit: () => void
+  onPayBill: () => void
 }) {
   const settings = useLiveQuery(() => db.settings.get('app'), [], DEFAULT_SETTINGS)
   const periods = useLiveQuery(() => db.periods.orderBy('startDate').toArray(), [], [])
@@ -364,6 +398,16 @@ function AccountDetailSheet({
       <p className="-mt-1 mb-3 text-xs text-slate-400">
         Balance {fmt(balanceMinor, accCur, { compactCents: true })}
       </p>
+
+      {/* Pay the credit-card bill early — records one bank→card transfer */}
+      {account.type === 'credit' && dueMinor > 0 && (
+        <button
+          onClick={onPayBill}
+          className="mb-3 w-full rounded-2xl bg-indigo-500 py-3 font-bold text-white shadow-lg shadow-indigo-500/30"
+        >
+          💳 Pay bill · {fmt(dueMinor, accCur, { compactCents: true })}
+        </button>
+      )}
 
       {/* Cycle navigator */}
       <div className="mb-3 flex items-center justify-between">
